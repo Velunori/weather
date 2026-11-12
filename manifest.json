@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "velunori.weather",
+  "name": "Velunori Weather",
+  "version": "0.1.0",
+  "author": "Velunori",
+  "description": "Weather in the bar with a Velunori panel: current conditions, three-day forecast and location search.",
+  "kinds": ["bar-widget"],
+  "omarchy": {"clonedFrom": "omarchy.weather"},
+  "entryPoints": {"barWidget": "Widget.qml"},
+  "barWidget": {
+    "displayName": "Weather", "description": "Weather with a detail panel",
+    "category": "Info", "allowMultiple": false, "defaultSection": "center",
+    "settingsForm": "weatherSettings", "defaults": {}
+  }
+}
