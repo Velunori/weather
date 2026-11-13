@@ -11,7 +11,7 @@ done
 python3 - "$core_dir/manifest.json" <<'PY'
 import json,sys
 core=json.load(open(sys.argv[1]))
-assert core['id']=='velunori.core' and tuple(map(int,core['version'].split('.'))) >= (0,4,1), 'Core 0.4.1 or later required'
+assert core['id']=='velunori.core' and tuple(map(int,core['version'].split('.'))) >= (0,4,2), 'Core 0.4.2 or later required'
 PY
 bash "$core_dir/scripts/prepare-dev-layout.sh"
 if [[ -e "$plugin_dir" || -L "$plugin_dir" ]]; then

@@ -12,11 +12,21 @@ Item {
     property var theme: V.Theme {}
     // Condition icons are Nerd Font glyphs.
     property string iconFont: "monospace"
+    property bool citiesOpen: false
+    property var cityForecasts: []
+    property string detailCityId: ""
+    readonly property bool showOverview: cityForecasts.length > 1 && !detailCityId && !editing
+    readonly property var displayWeather: {
+        var row = cityForecasts.find(function(row) { return row.city.id === root.detailCityId; });
+        return row ? row.weather : weather;
+    }
+    function resetOverview() { detailCityId = ""; citiesOpen = false; }
+    onCityForecastsChanged: if (detailCityId && !cityForecasts.some(function(row) { return row.city.id === root.detailCityId; })) detailCityId = ""
     signal closeRequested()
 
     readonly property bool editing: !!weather && weather.editingLocation
     readonly property bool saving: !!weather && weather.savingLocation
-    readonly property var days: weather ? weather.forecastDays : []
+    readonly property var days: displayWeather ? displayWeather.forecastDays : []
     readonly property var suggestions: weather ? weather.locationSuggestions : []
     readonly property color hover: "#37363f"
     implicitHeight: column.implicitHeight
@@ -56,12 +66,42 @@ Item {
         }
 
         // Current conditions.
+        V.Button { objectName: "weatherAllCities"; visible: !!root.detailCityId && root.cityForecasts.length > 1; text: "‹ All cities"; implicitHeight: 30; accent: root.theme.accent; onClicked: root.detailCityId = "" }
+        ColumnLayout {
+            visible: root.showOverview
+            Layout.fillWidth: true; spacing: 10
+            Text { text: "Your cities"; color: root.theme.text; font.pixelSize: 20; font.weight: Font.DemiBold }
+            Text { text: "Current weather · select a city for its weekly forecast"; color: root.theme.muted; font.pixelSize: 11; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+            Repeater {
+                model: root.cityForecasts
+                AbstractButton {
+                    id: cityCard
+                    required property var modelData
+                    objectName: "weatherCityCard"
+                    Layout.fillWidth: true; implicitHeight: 86; hoverEnabled: true
+                    Accessible.name: modelData.city.name + ", " + modelData.weather.reportTempNum + modelData.weather.tempUnit
+                    onClicked: root.detailCityId = modelData.city.id
+                    background: Rectangle { radius: 14; color: cityCard.hovered ? root.hover : root.theme.surface; border.color: cityCard.activeFocus ? root.theme.accent : root.theme.border }
+                    contentItem: RowLayout {
+                        spacing: 12
+                        Text { Layout.leftMargin: 14; text: cityCard.modelData.weather.label; color: root.theme.accent; font.family: root.iconFont; font.pixelSize: 27; Layout.preferredWidth: 36 }
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 4
+                            Text { text: cityCard.modelData.city.name; textFormat: Text.PlainText; color: root.theme.text; font.pixelSize: 14; font.weight: Font.Medium; elide: Text.ElideRight; Layout.fillWidth: true }
+                            Text { text: cityCard.modelData.weather.loading ? "Fetching forecast…" : cityCard.modelData.weather.condition; textFormat: Text.PlainText; color: root.theme.muted; font.pixelSize: 11; elide: Text.ElideRight; Layout.fillWidth: true }
+                        }
+                        Text { Layout.rightMargin: 14; text: cityCard.modelData.weather.loading ? "—" : cityCard.modelData.weather.reportTempNum + cityCard.modelData.weather.tempUnit; color: root.theme.text; font.pixelSize: 26; font.weight: Font.Medium }
+                    }
+                }
+            }
+        }
         RowLayout {
+            visible: !root.showOverview
             Layout.fillWidth: true; spacing: 16
             Text {
                 objectName: "weatherIcon"
                 textFormat: Text.PlainText
-                text: root.weather && root.weather.label ? root.weather.label : "—"
+                text: root.displayWeather && root.displayWeather.label ? root.displayWeather.label : "—"
                 color: root.theme.accent; font.family: root.iconFont; font.pixelSize: 54
             }
             ColumnLayout {
@@ -71,19 +111,19 @@ Item {
                     Text {
                         objectName: "weatherTemp"
                         textFormat: Text.PlainText
-                        text: root.weather && root.weather.reportTempNum ? root.weather.reportTempNum : "—"
+                        text: root.displayWeather && root.displayWeather.reportTempNum ? root.displayWeather.reportTempNum : "—"
                         color: root.theme.text; font.pixelSize: 46; font.weight: Font.DemiBold
                     }
                     Text {
                         Layout.alignment: Qt.AlignTop; Layout.topMargin: 9
-                        text: root.weather && !root.weather.loading ? root.weather.tempUnit : ""
+                        text: root.displayWeather && !root.displayWeather.loading ? root.displayWeather.tempUnit : ""
                         color: root.theme.muted; font.pixelSize: 18
                     }
                 }
                 Text {
                     objectName: "weatherCondition"
                     Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
-                    text: !root.weather || root.weather.loading ? "Fetching forecast…" : root.weather.condition
+                    text: !root.displayWeather || root.displayWeather.loading ? "Fetching forecast…" : root.displayWeather.condition
                     visible: text !== ""
                     color: root.theme.muted; font.pixelSize: 13
                 }
@@ -92,23 +132,60 @@ Item {
 
         // Location: a chip that turns into a search field.
         Rectangle {
+            id: locationChip
             objectName: "weatherLocation"
+            activeFocusOnTab: true
+            Accessible.role: Accessible.Button
+            Keys.onReturnPressed: root.citiesOpen = !root.citiesOpen
+            Keys.onSpacePressed: root.citiesOpen = !root.citiesOpen
             visible: !root.editing
             Layout.fillWidth: true; implicitHeight: 38; radius: 12
-            color: chipArea.containsMouse ? root.hover : root.theme.surface; border.color: root.theme.border
+            color: chipArea.containsMouse ? root.hover : root.theme.surface; border.color: locationChip.activeFocus ? root.theme.accent : root.theme.border
             Behavior on color { enabled: root.theme.motion; ColorAnimation { duration: 90 } }
-            Accessible.name: "Change location"
+            Accessible.name: "Choose or manage weather cities"
             RowLayout {
                 anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 8
                 Text { text: ""; color: root.theme.accent; font.family: root.iconFont; font.pixelSize: 13 }
                 Text {
                     Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
-                    text: root.weather && root.weather.reportLocation ? root.weather.reportLocation : "Detecting location…"
+                    text: root.showOverview ? "Manage saved cities" : root.displayWeather && root.displayWeather.reportLocation ? root.displayWeather.reportLocation : "Detecting location…"
                     color: root.theme.text; font.pixelSize: 13
                 }
-                Text { text: "Change"; color: root.theme.muted; font.pixelSize: 12 }
+                Text { text: "Cities"; color: root.theme.muted; font.pixelSize: 12 }
             }
-            MouseArea { id: chipArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.weather.startEditingLocation() }
+            MouseArea { id: chipArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: root.citiesOpen = !root.citiesOpen }
+        }
+        Text { visible: root.weather && !!root.weather.cityError; text: root.weather ? root.weather.cityError || "" : ""; color: "#eaa7bb"; font.pixelSize: 12; Layout.fillWidth: true; wrapMode: Text.WordWrap }
+        ColumnLayout {
+            visible: root.citiesOpen && !root.editing
+            Layout.fillWidth: true; spacing: 8
+            RowLayout {
+                Layout.fillWidth: true
+                Text { text: "Saved cities"; color: root.theme.text; font.pixelSize: 14; font.weight: Font.DemiBold; Layout.fillWidth: true }
+                V.Button { objectName: "weatherAddCity"; text: "+ Add city"; implicitHeight: 30; implicitWidth: 94; accent: root.theme.accent; onClicked: { root.citiesOpen = false; root.weather.startEditingLocation(); } }
+            }
+            Repeater {
+                model: root.weather ? root.weather.savedCities || [] : []
+                RowLayout {
+                    id: cityRow
+                    required property var modelData
+                    objectName: "weatherSavedCity"
+                    Layout.fillWidth: true; spacing: 6
+                    V.Button {
+                        id: cityButton
+                        objectName: "weatherSelectCity"
+                        implicitWidth: 100; Layout.minimumWidth: 0
+                        contentItem: Text { text: cityButton.text; textFormat: Text.PlainText; color: cityButton.primary ? root.theme.background : root.theme.text; font.pixelSize: 13; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter; horizontalAlignment: Text.AlignHCenter }
+                        Layout.fillWidth: true; implicitHeight: 34; accent: root.theme.accent
+                        text: cityRow.modelData.name + (cityRow.modelData.description ? " · " + cityRow.modelData.description : "")
+                        primary: root.weather.isSelectedCity(cityRow.modelData)
+                        enabled: !root.saving
+                        onClicked: { root.weather.selectCity(cityRow.modelData); root.citiesOpen = false; }
+                    }
+                    V.Button { objectName: "weatherRemoveCity"; text: "×"; implicitWidth: 32; implicitHeight: 32; accent: root.theme.accent; enabled: !root.saving; Accessible.name: "Remove city: " + cityRow.modelData.name; onClicked: root.weather.removeCity(cityRow.modelData) }
+                }
+            }
+            V.Button { text: "Automatic location"; implicitHeight: 32; accent: root.theme.accent; enabled: !root.saving; onClicked: { root.weather.clearLocation(); root.citiesOpen = false; } }
         }
         RowLayout {
             visible: root.editing
@@ -171,10 +248,10 @@ Item {
 
         // Feels like, wind, humidity.
         RowLayout {
-            visible: !!root.weather && !root.weather.loading
+            visible: !root.showOverview && !!root.displayWeather && !root.displayWeather.loading
             Layout.fillWidth: true; spacing: 8
             Repeater {
-                model: root.weather ? [["Feels like", root.weather.reportFeels], ["Wind", root.weather.reportWind], ["Humidity", root.weather.reportHumidity]] : []
+                model: root.displayWeather ? [["Feels like", root.displayWeather.reportFeels], ["Wind", root.displayWeather.reportWind], ["Humidity", root.displayWeather.reportHumidity]] : []
                 V.Surface {
                     id: stat
                     required property var modelData
@@ -189,30 +266,29 @@ Item {
             }
         }
 
-        // Next days.
+        // A compact weekly agenda keeps all seven days legible at panel width.
         ColumnLayout {
-            visible: root.days.length > 0
-            Layout.fillWidth: true; spacing: 8
-            Text { text: "Next days"; color: root.theme.text; font.pixelSize: 14; font.weight: Font.DemiBold }
+            visible: !root.showOverview && root.days.length > 0
+            Layout.fillWidth: true; spacing: 4
             RowLayout {
-                Layout.fillWidth: true; spacing: 8
-                Repeater {
-                    model: root.days
-                    V.Surface {
-                        id: day
-                        required property var modelData
-                        objectName: "weatherDay"
-                        Layout.fillWidth: true; Layout.preferredWidth: 100; implicitHeight: 96; radius: 14
-                        Column {
-                            anchors.centerIn: parent; spacing: 6
-                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.weather.dayName(day.modelData.date); textFormat: Text.PlainText; color: root.theme.muted; font.pixelSize: 11 }
-                            Text { anchors.horizontalCenter: parent.horizontalCenter; text: root.weather.dayIcon(day.modelData); textFormat: Text.PlainText; color: root.theme.accent; font.family: root.iconFont; font.pixelSize: 24 }
-                            Row {
-                                anchors.horizontalCenter: parent.horizontalCenter; spacing: 6
-                                Text { text: root.weather.bareTempForDay(day.modelData, "max"); color: root.theme.text; font.pixelSize: 13; font.weight: Font.DemiBold }
-                                Text { text: root.weather.bareTempForDay(day.modelData, "min"); color: root.theme.muted; font.pixelSize: 13 }
-                            }
-                        }
+                Layout.fillWidth: true; Layout.bottomMargin: 4
+                Text { text: root.days.length >= 7 ? "Next 7 days" : "Upcoming forecast"; color: root.theme.text; font.pixelSize: 14; font.weight: Font.DemiBold; Layout.fillWidth: true }
+                Text { text: "Low / High"; color: root.theme.muted; font.pixelSize: 11 }
+            }
+            Repeater {
+                model: root.days
+                Item {
+                    id: day
+                    required property var modelData
+                    objectName: "weatherDay"
+                    Layout.fillWidth: true; implicitHeight: 32
+                    RowLayout {
+                        anchors.fill: parent; spacing: 10
+                        Text { Layout.fillWidth: true; text: root.displayWeather.dayName(day.modelData.date); textFormat: Text.PlainText; color: root.theme.text; font.pixelSize: 12; elide: Text.ElideRight }
+                        Text { text: Qt.formatDate(new Date(day.modelData.date + "T12:00:00"), "d MMM"); color: root.theme.muted; font.pixelSize: 11; Layout.preferredWidth: 48 }
+                        Text { text: root.displayWeather.dayIcon(day.modelData); textFormat: Text.PlainText; color: root.theme.accent; font.family: root.iconFont; font.pixelSize: 22; Layout.preferredWidth: 30; horizontalAlignment: Text.AlignHCenter }
+                        Text { text: root.displayWeather.bareTempForDay(day.modelData, "min"); color: root.theme.muted; font.pixelSize: 12; Layout.preferredWidth: 38; horizontalAlignment: Text.AlignRight }
+                        Text { text: root.displayWeather.bareTempForDay(day.modelData, "max"); color: root.theme.text; font.pixelSize: 13; font.weight: Font.DemiBold; Layout.preferredWidth: 38; horizontalAlignment: Text.AlignRight }
                     }
                 }
             }

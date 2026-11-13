@@ -1,6 +1,7 @@
 // Adapted from the Omarchy weather panel (4.0.6-1), MIT; see THIRD_PARTY_NOTICES.md.
 // The fetching, retry and location logic is Omarchy's; it is separated from the
 // presentation here so the Velunori panel can be drawn (and tested) on its own.
+// Velunori adds saved cities, serialized selection writes and response identity checks.
 import QtQuick
 import Quickshell
 import Quickshell.Io
@@ -13,6 +14,30 @@ Item {
 
   // This widget's entry in shell.json (unit, refreshMinutes).
   property var settings: ({})
+  property var fixedLocation: null
+  property bool active: true
+  onFixedLocationChanged: if (fixedLocation) configuredLocationState = {name: fixedLocation.name, latitude: fixedLocation.latitude, longitude: fixedLocation.longitude}
+  onActiveChanged: {
+    if (active) Qt.callLater(refresh)
+    else { forecastProc.running = false; dailyForecastProc.running = false; forecastRetryTimer.stop(); dailyForecastRetryTimer.stop(); }
+  }
+  CityStore { id: cityStore; active: root.fixedLocation === null }
+  readonly property var savedCities: cityStore.cities
+  readonly property string cityError: locationSaveError || cityStore.error
+  property string locationSaveError: ""
+  property var pendingLocationSave: null
+  property bool initialCityImported: false
+  function rememberCity(city) { if (city && city.name) cityStore.perform({action: "add", city: city}); }
+  function isSelectedCity(city) { return Model.wttrLocationQuery(city.name, city.latitude, city.longitude) === locationQuery; }
+  function selectCity(city) {
+    cancelEditingLocation()
+    configuredLocationState = {name: city.name, latitude: city.latitude, longitude: city.longitude}
+    persistLocation(city.name, city.latitude, city.longitude)
+  }
+  function removeCity(city) {
+    cityStore.perform({action: "remove", id: city.id});
+    if (Model.wttrLocationQuery(city.name, city.latitude, city.longitude) === locationQuery) clearLocation();
+  }
   function setting(name, fallback) {
     var value = settings ? settings[name] : undefined
     return value === undefined || value === null ? fallback : value
@@ -27,7 +52,7 @@ Item {
   readonly property string condition: Conditions.describe(current)
   readonly property bool loading: !current
   function reload() {
-    locationFile.reload()
+    if (fixedLocation === null) locationFile.reload()
     refresh()
   }
 
@@ -44,11 +69,13 @@ Item {
   readonly property string configuredLocation: configuredLocationState.name
   readonly property string locationQuery: Model.wttrLocationQuery(configuredLocationState.name, configuredLocationState.latitude, configuredLocationState.longitude)
 
-  // Keep the previous report visible while the new location loads. The
-  // editor remains open with a spinner, so stale data is never presented
-  // under the newly configured location label.
+  // Clear the old city immediately. Responses carry a query identity so
+  // a cancelled request cannot put old temperatures under a new city label.
   onLocationQueryChanged: {
     if (savingLocation) savingLocationQueryStarted = true
+    report = null
+    dailyForecastReport = null
+    wttrLocation = ""
     forecastRetries = 0
     dailyForecastRetries = 0
     forecastProc.running = false
@@ -57,12 +84,19 @@ Item {
   }
 
   property FileView locationFile: FileView {
-    path: Quickshell.env("HOME") + "/.local/state/omarchy/settings/weather.json"
-    watchChanges: true
+    path: root.fixedLocation ? "" : Quickshell.env("HOME") + "/.local/state/omarchy/settings/weather.json"
+    watchChanges: root.fixedLocation === null
     printErrors: false
     onFileChanged: reload()
-    onLoaded: root.configuredLocationState = Model.parseLocationFile(text())
-    onLoadFailed: root.configuredLocationState = Model.parseLocationFile("")
+    onLoaded: {
+      if (root.fixedLocation || root.pendingLocationSave || locationSaveProc.running) return
+      root.configuredLocationState = Model.parseLocationFile(text())
+      if (!root.initialCityImported && root.configuredLocationState.name) {
+        root.initialCityImported = true
+        root.rememberCity(root.configuredLocationState)
+      }
+    }
+    onLoadFailed: if (!root.fixedLocation) root.configuredLocationState = Model.parseLocationFile("")
   }
 
   // The first read can race shell startup (observed sporadically), leaving a
@@ -71,7 +105,7 @@ Item {
   // state doesn't change locationQuery and so triggers no refetch.
   Timer {
     interval: 1500
-    running: true
+    running: root.fixedLocation === null
     onTriggered: locationFile.reload()
   }
 
@@ -112,6 +146,7 @@ Item {
   readonly property string reportHumidity:  current ? (current.humidity + "%") : ""
 
   function refresh() {
+    if (!active) return
     // Each full refresh cycle gets a fresh retry budget, so an earlier
     // exhausted round (e.g. waking with the network still down) doesn't
     // starve retries for the rest of the session.
@@ -126,6 +161,7 @@ Item {
   }
 
   function refreshDailyForecast(sourceReport) {
+    if (!active) return
     if (dailyForecastProc.running) return
 
     var lat = parseFloat(String(root.configuredLocationState.latitude))
@@ -143,8 +179,9 @@ Item {
       + "&longitude=" + encodeURIComponent(String(lon))
       + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
       + "&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code,is_day"
-      + "&forecast_days=4"
+      + "&forecast_days=8"
       + "&timezone=auto"
+    dailyForecastProc.requestQuery = root.locationQuery
     dailyForecastProc.command = ["curl", "-fsS", "--max-time", "5", url]
     dailyForecastProc.running = true
   }
@@ -184,10 +221,12 @@ Item {
       latitude: location.latitude,
       longitude: location.longitude
     }
+    rememberCity(location)
     persistLocation(location.name, location.latitude, location.longitude)
   }
 
   function clearLocation() {
+    configuredLocationState = {name: "", latitude: null, longitude: null}
     persistLocation("", null, null)
     wttrLocation = ""
     cancelEditingLocation()
@@ -202,6 +241,7 @@ Item {
       latitude: suggestion.latitude,
       longitude: suggestion.longitude
     }
+    rememberCity(suggestion)
     persistLocation(suggestion.name, suggestion.latitude, suggestion.longitude)
   }
 
@@ -210,6 +250,14 @@ Item {
   }
 
   function persistLocation(name, latitude, longitude) {
+    pendingLocationSave = {name: name, latitude: latitude, longitude: longitude}
+    locationSaveError = ""
+    drainLocationSave()
+  }
+  function drainLocationSave() {
+    if (locationSaveProc.running || !pendingLocationSave) return
+    var name = pendingLocationSave.name, latitude = pendingLocationSave.latitude, longitude = pendingLocationSave.longitude
+    pendingLocationSave = null
     if (name && latitude !== null && longitude !== null)
       locationSaveProc.command = ["omarchy-weather-location", "--set", name, latitude + "," + longitude]
     else if (name)
@@ -291,10 +339,13 @@ Item {
 
   Process {
     id: forecastProc
+    property string requestQuery: ""
+    onStarted: requestQuery = root.locationQuery
     command: ["curl", "-fsS", "--max-time", "10", "https://wttr.in/" + root.locationQuery + "?format=j1"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
+        if (forecastProc.requestQuery !== root.locationQuery) return
         var raw = String(text || "").trim()
         if (!raw) {
           root.scheduleForecastRetry()
@@ -323,7 +374,7 @@ Item {
   // wttr.in can be slow or flaky, especially for a location it hasn't
   // cached yet. Retry a few times before leaving it to the refresh timer.
   function scheduleForecastRetry() {
-    if (forecastRetries >= 3) return
+    if (!active || forecastRetries >= 3) return
     forecastRetries++
     forecastRetryTimer.restart()
   }
@@ -338,7 +389,7 @@ Item {
   // bar icon, so a dropped response (e.g. waking before the network is back)
   // must retry rather than wait out the refresh timer with a stale icon.
   function scheduleDailyForecastRetry() {
-    if (dailyForecastRetries >= 3) return
+    if (!active || dailyForecastRetries >= 3) return
     dailyForecastRetries++
     dailyForecastRetryTimer.restart()
   }
@@ -351,9 +402,11 @@ Item {
 
   Process {
     id: dailyForecastProc
+    property string requestQuery: ""
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
+        if (dailyForecastProc.requestQuery !== root.locationQuery) return
         var raw = String(text || "").trim()
         if (!raw) {
           root.scheduleDailyForecastRetry()
@@ -396,19 +449,16 @@ Item {
   Process {
     id: locationSaveProc
     onExited: function(exitCode) {
-      if (exitCode !== 0 || !root.savingLocation) return
-
-      // FileView handles changed locations. Explicitly refresh here too so
-      // saving the already-active location cannot strand the spinner.
-      locationFile.reload()
-      if (!root.savingLocationQueryStarted) {
-        root.savingLocationQueryStarted = true
-        root.forecastRetries = 0
-        root.dailyForecastRetries = 0
-        forecastProc.running = false
-        dailyForecastProc.running = false
-        Qt.callLater(root.refresh)
-      }
+      Qt.callLater(function() {
+        if (root.pendingLocationSave) { root.drainLocationSave(); return; }
+        locationFile.reload()
+        if (exitCode !== 0) { root.locationSaveError = "Could not save the active city."; root.cancelEditingLocation(); return; }
+        if (root.savingLocation && !root.savingLocationQueryStarted) {
+          root.savingLocationQueryStarted = true
+          forecastProc.running = false; dailyForecastProc.running = false
+          Qt.callLater(root.refresh)
+        }
+      })
     }
   }
 
@@ -428,7 +478,7 @@ Item {
   Timer {
     id: refreshTimer
     interval: root.refreshMinutes * 60 * 1000
-    running: true
+    running: root.active
     repeat: true
     triggeredOnStart: true
     onTriggered: root.refresh()
