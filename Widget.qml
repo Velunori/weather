@@ -4,7 +4,7 @@ import QtQuick.Controls
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
-import "../velunori.core/kit" as V
+import "../lib/kit" as V
 import "components"
 import "Model.js" as Model
 
@@ -17,7 +17,7 @@ Item {
     // Hidden until the first forecast arrives, like the widget it replaces.
     readonly property bool wanted: forecast.label !== ""
     visible: wanted
-    implicitWidth: wanted ? 34 : 0
+    implicitWidth: wanted ? Style.bar.iconSlot : 0
     implicitHeight: bar ? bar.barSize : 40
 
     V.Theme { id: tokens; bar: root.bar }
@@ -71,7 +71,7 @@ Item {
             anchors.centerIn: parent
             textFormat: Text.PlainText
             text: forecast.label; color: tokens.accent
-            font.family: Style.font.menuFamily; font.pixelSize: 15
+            font.family: Style.font.menuFamily; font.pixelSize: Style.bar.iconFont
         }
     }
 

@@ -6,8 +6,8 @@ import "velunori.weather/components"
 import "velunori.weather" as W
 import "velunori.weather/Model.js" as Model
 import "velunori.weather/Conditions.js" as Conditions
-import "velunori.core/kit" as V
-import "velunori.core/kit/PanelGeometry.js" as PanelGeometry
+import "lib/kit" as V
+import "lib/kit/PanelGeometry.js" as PanelGeometry
 
 ShellRoot {
     id: testRoot

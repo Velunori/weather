@@ -2,7 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import "../../velunori.core/kit" as V
+import "../../lib/kit" as V
 
 // The panel content. It reads `weather` (WeatherData, or a stand-in in tests)
 // and calls its location functions; it fetches nothing itself.

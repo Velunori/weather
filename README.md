@@ -6,6 +6,8 @@
 
 ## Features
 
+- Bar icons and icon-only slots follow Omarchy’s active `Style.bar` sizes, including theme/font changes.
+
 - The current condition as an icon in the bar; hover for temperature, condition and place.
 - The panel aligns with the center of its Island/Orbit capsule, including capsules moved to either side of the screen.
 - A panel with the temperature, a plain-language condition, feels-like, wind and humidity, and the next seven days as compact rows with low/high temperatures.
@@ -20,14 +22,16 @@
 
 ## Requirements
 
-[Velunori core](https://github.com/velunori/core) 0.4.2 or later, installed next to this plugin, Python 3 and `curl`. Developed against **Omarchy 4.0.6-1**.
+[Velunori Library](https://github.com/Velunori/lib) API 1 (version 1.x), installed in the real sibling `lib/` directory. Works with the stock Omarchy bar; Floating Bars is optional. Developed against **Omarchy 4.0.6-1**.
 
 Forecasts come from [Open-Meteo](https://open-meteo.com) and [wttr.in](https://wttr.in), the same sources the built-in widget uses.
 
 ## Install
 
+Install the shared library first, then run from this repository directory:
+
 ```bash
-bash ~/dev/Velunori/weather/scripts/install-local.sh
+bash scripts/install-local.sh
 ```
 
 The installer backs up `shell.json`, links this checkout, puts the widget where `omarchy.weather` was and restarts the shell. A failure restores the backup.
@@ -77,7 +81,7 @@ Velunori is a set of independent plugins for the [Omarchy](https://omarchy.org) 
 
 | Plugin | What it is |
 | --- | --- |
-| [core](https://github.com/velunori/core) | The Island and Orbit bars, the appearance settings and the shared design kit |
+| [bar](https://github.com/Velunori/bar) | The Island and Orbit bars, the appearance settings and the shared design kit |
 | [clock](https://github.com/velunori/clock) | Clock in the bar with a month calendar |
 | [control-center](https://github.com/velunori/control-center) | Sound, displays, network, capture and reminders in one panel |
 | [notifications](https://github.com/velunori/notifications) | Notification cards and a session history |

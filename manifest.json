@@ -5,12 +5,31 @@
   "version": "0.2.1",
   "author": "Velunori",
   "description": "Weather in the bar with a Velunori panel: current conditions, simultaneous saved cities, seven-day forecasts and location search.",
-  "kinds": ["bar-widget"],
-  "omarchy": {"clonedFrom": "omarchy.weather"},
-  "entryPoints": {"barWidget": "Widget.qml"},
+  "kinds": [
+    "bar-widget"
+  ],
+  "omarchy": {
+    "clonedFrom": "omarchy.weather"
+  },
+  "entryPoints": {
+    "barWidget": "Widget.qml"
+  },
   "barWidget": {
-    "displayName": "Weather", "description": "Weather with a detail panel",
-    "category": "Info", "allowMultiple": false, "defaultSection": "center",
-    "settingsForm": "weatherSettings", "defaults": {}
+    "displayName": "Weather",
+    "description": "Weather with a detail panel",
+    "category": "Info",
+    "allowMultiple": false,
+    "defaultSection": "center",
+    "settingsForm": "weatherSettings",
+    "defaults": {}
+  },
+  "velunori": {
+    "dependencies": {
+      "velunori.lib": {
+        "apiVersion": 1,
+        "minimumVersion": "1.0.0",
+        "maximumExclusive": "2.0.0"
+      }
+    }
   }
 }
